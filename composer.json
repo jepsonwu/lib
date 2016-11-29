@@ -1,7 +1,30 @@
 {
   "name": "jepsonwu/lib",
   "description": "lib of what some tools",
+  "keywords": [
+    "lib",
+    "jepson"
+  ],
+  "homepage": "https://github.com/jepsonwu/lib",
+  "type": "library",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "jepsonwu",
+      "email": "wjp13671142513@163.com"
+    }
+  ],
   "require": {
     "php": "^5.3.3 || ^7.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "Jepsonwu\\": "src"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Jepsonwu\\": "tests"
+    }
   }
 }
