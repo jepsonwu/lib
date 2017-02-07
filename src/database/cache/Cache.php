@@ -10,7 +10,7 @@ interface Cache
 {
     public function get($key);
 
-    public function set($key, $value);
+    public function set($key, $value, $expiration);
 
     public function delete($key);
 }

@@ -30,9 +30,9 @@ class MemcachedCache implements Cache
         return empty($result) ? [] : $result;
     }
 
-    public function set($key, $value)
+    public function set($key, $value, $expiration = 0)
     {
-        return $this->cache->set($key, json_encode($value));
+        return $this->cache->set($key, json_encode($value), $expiration);
     }
 
     public function delete($key)
