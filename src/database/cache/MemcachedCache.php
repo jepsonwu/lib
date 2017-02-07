@@ -26,7 +26,7 @@ class MemcachedCache implements Cache
 
     public function get($key)
     {
-        $result = json_decode($this->cache->get($key));
+        $result = json_decode($this->cache->get($key), true);
         return empty($result) ? [] : $result;
     }
 

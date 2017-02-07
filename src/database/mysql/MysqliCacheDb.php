@@ -37,11 +37,13 @@ class MysqliCacheDb extends \MysqliDb
     {
         $this->tableName = $tableName;
         $this->primaryKey = $primaryKey;
+        return $this;
     }
 
     public function configCache(array $config)
     {
         $this->cacheConfig = !is_array(current($config)) ? [$config] : $config;;
+        return $this;
     }
 
     /**
@@ -78,6 +80,9 @@ class MysqliCacheDb extends \MysqliDb
     private function getCache()
     {
         if (!$this->cache) {
+            if (!$this->cacheConfig)
+                throw new MysqlException("Mysql db cache config invalid!");
+
             try {
                 $this->cache = new MemcachedCache($this->cacheConfig);
             } catch (\Exception $e) {
@@ -167,7 +172,7 @@ class MysqliCacheDb extends \MysqliDb
     public function fetchAllByCache()
     {
         $result = [];
-        $primaryArr = $this->getValue($this->getTableName(), $this->getPrimaryKey(), 2);
+        $primaryArr = $this->getValue($this->getTableName(), $this->getPrimaryKey(), null);
         $primaryArr && $result = $this->fetchByPrimaryArrCache($primaryArr);
 
         return $result;
