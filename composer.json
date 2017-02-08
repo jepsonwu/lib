@@ -16,7 +16,8 @@
   ],
   "require": {
     "php": "^5.3.3 || ^7.0",
-    "joshcam/mysqli-database-class": ">=v2.6"
+    "joshcam/mysqli-database-class": ">=v2.6",
+    "monolog/monolog": "^1.21"
   },
   "autoload": {
     "psr-4": {
