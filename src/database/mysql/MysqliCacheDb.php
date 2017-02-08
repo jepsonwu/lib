@@ -19,6 +19,10 @@ use Jepsonwu\database\exception\MysqlException;
  */
 class MysqliCacheDb extends \MysqliDb
 {
+    /**
+     * table
+     * @var
+     */
     private $tableName;
     private $primaryKey;//just support single primary key todo multi primary key
 
@@ -28,10 +32,20 @@ class MysqliCacheDb extends \MysqliDb
     private $cache;
     private $cacheConfig;
 
+    /**
+     * CURD
+     * @var string
+     */
     private $columns = "*";
+    private $paginate = null;
 
+    /**
+     * transaction
+     * @var bool
+     */
     private $inTransaction = false;
     private $transactionDeleteCachePrimaryArr = [];
+
 
     public function configTable($tableName, $primaryKey)
     {
@@ -57,7 +71,7 @@ class MysqliCacheDb extends \MysqliDb
         return $this;
     }
 
-    private function getTableName()
+    public function getTableName()
     {
         if (!$this->tableName)
             throw new MysqlException("Mysql db tablename invalid!");
@@ -100,10 +114,7 @@ class MysqliCacheDb extends \MysqliDb
 
     private function deleteCache(array $primaryArr)
     {
-        foreach ($primaryArr as $primary)
-            $this->getCache()->delete($this->getCacheKey($primary));
-
-        return true;
+        return $this->getCache()->deleteMulti($primaryArr);
     }
 
     /**
@@ -172,7 +183,7 @@ class MysqliCacheDb extends \MysqliDb
     public function fetchAllByCache()
     {
         $result = [];
-        $primaryArr = $this->getValue($this->getTableName(), $this->getPrimaryKey(), null);
+        $primaryArr = $this->getValue($this->getTableName(), $this->getPrimaryKey(), $this->paginate);
         $primaryArr && $result = $this->fetchByPrimaryArrCache($primaryArr);
 
         return $result;
@@ -233,6 +244,47 @@ class MysqliCacheDb extends \MysqliDb
         return $result;
     }
 
+    public function paginateByLimit($page, $perPage)
+    {
+        $page = (int)$page > 1 ? (int)$page : 1;
+        $perPage = (int)$perPage > 0 ? (int)$perPage : 0;
+
+        $this->paginate = [($page - 1) * $perPage, $perPage];
+        return $this;
+    }
+
+    public function paginateByPrimary($lastPrimary, $perPage, $desc = true)
+    {
+        $lastPrimary = (int)$lastPrimary;
+        if ($lastPrimary > 0) {
+            $this->where($this->getPrimaryKey(), $lastPrimary, $desc ? "<" : ">");
+            $this->orderBy($this->getPrimaryKey(), $desc ? "DESC" : "ASC");
+        }
+        $this->paginate = (int)$perPage > 0 ? (int)$perPage : 0;
+        return $this;
+    }
+
+    public function count()
+    {
+        return (int)$this->getValue($this->getTableName(), "COUNT(1)");
+    }
+
+    public function countDistinct()
+    {
+        return (int)$this->setQueryOption("DISTINCT")->getValue($this->getTableName(), "COUNT(1)");
+    }
+
+    public function countDistinctColumn($column)
+    {
+        return (int)$this->getValue($this->getTableName(), "COUNT(DISTINCT {$column})");
+    }
+
+    public function orderByPrimary($desc = true)
+    {
+        $this->orderBy($this->getPrimaryKey(), $desc ? "DESC" : "ASC");
+        return $this;
+    }
+
     public function update($tableName, $tableData, $numRows = null)
     {
         return false;
@@ -254,7 +306,28 @@ class MysqliCacheDb extends \MysqliDb
 
     public function updateByCache($tableData)
     {
+        $affectRows = 0;
+        $primaryArr = $this->getValue($this->getTableName(), $this->getPrimaryKey(), $this->paginate);
+        if ($primaryArr) {
+            foreach ($primaryArr as $primary) {
+                $ret = $this->updateByPrimaryCache($primary, $tableData);
+                $ret && $affectRows += (int)$this->count;
+            }
+        }
 
+        return $affectRows;
+    }
+
+    public function increase($primary, $column, $num = 1)
+    {
+        $inc = $this->inc($num);
+        return $this->updateByPrimaryCache($primary, [$column => $inc]);
+    }
+
+    public function decrease($primary, $column, $num = 1)
+    {
+        $dec = $this->dec($num);
+        return $this->updateByPrimaryCache($primary, [$column => $dec]);
     }
 
     public function delete($tableName, $numRows = null)
@@ -262,19 +335,36 @@ class MysqliCacheDb extends \MysqliDb
         return false;
     }
 
-    public function deleteByPrimaryCache()
+    public function deleteByPrimaryCache($primary)
     {
+        $this->where($this->getPrimaryKey(), $primary);
+        $result = parent::delete($this->getTableName(), 1);
+        if ($result) {
+            if ($this->inTransaction)
+                $this->transactionDeleteCachePrimaryArr[] = $primary;
+            else
+                $this->deleteCache([$primary]);
+        }
 
+        return $result;
     }
 
     public function deleteByCache()
     {
+        $affectRows = 0;
+        $primaryArr = $this->getValue($this->getTableName(), $this->getPrimaryKey(), $this->paginate);
+        if ($primaryArr) {
+            foreach ($primaryArr as $primary) {
+                $ret = $this->deleteByPrimaryCache($primary);
+                $ret && $affectRows++;
+            }
+        }
 
+        return $affectRows;
     }
 
     public function rawQuery($query, $bindParams = null)
     {
-        //flush cache
         return false;
     }
 

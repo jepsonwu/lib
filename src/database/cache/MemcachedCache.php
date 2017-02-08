@@ -30,13 +30,38 @@ class MemcachedCache implements Cache
         return empty($result) ? [] : $result;
     }
 
+    public function getMulti(array $keys)
+    {
+        $result = $this->cache->getMulti($keys);
+        $result && $result = array_map(function ($val) {
+            return json_decode($val, true);
+        }, $result);
+
+        return empty($result) ? [] : $result;
+    }
+
     public function set($key, $value, $expiration = 0)
     {
         return $this->cache->set($key, json_encode($value), $expiration);
     }
 
+    public function setMulti(array $items, $expiration)
+    {
+        return $this->cache->setMulti($items, $expiration);
+    }
+
     public function delete($key)
     {
         return $this->cache->delete($key);
+    }
+
+    public function deleteMulti(array $keys)
+    {
+        return $this->cache->deleteMulti($keys);
+    }
+
+    public function flush()
+    {
+        return $this->cache->flush();
     }
 }
