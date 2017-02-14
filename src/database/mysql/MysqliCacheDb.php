@@ -30,7 +30,9 @@ class MysqliCacheDb extends \MysqliDb
      * @var Cache
      */
     private $cache;
+    private $enableCache = true;
     private $cacheConfig;
+    private $expiredTime = 86400;
 
     /**
      * CURD
@@ -54,9 +56,27 @@ class MysqliCacheDb extends \MysqliDb
         return $this;
     }
 
+    public function setExpiredTime($time)
+    {
+        $this->expiredTime = (int)$time;
+        return $this;
+    }
+
     public function configCache(array $config)
     {
         $this->cacheConfig = !is_array(current($config)) ? [$config] : $config;;
+        return $this;
+    }
+
+    /**
+     * you can disable cache in develop environment or switch cache between enable and disable anytime,it'll be safely.
+     * @return $this
+     */
+    public function disableCache()
+    {
+        $this->enableCache = false;
+        $this->deleteCachePrefix();
+
         return $this;
     }
 
@@ -79,7 +99,7 @@ class MysqliCacheDb extends \MysqliDb
         return $this->tableName;
     }
 
-    private function getPrimaryKey()
+    public function getPrimaryKey()
     {
         if (!$this->primaryKey)
             throw new MysqlException("Mysql db primary key invalid!");
@@ -107,9 +127,30 @@ class MysqliCacheDb extends \MysqliDb
         return $this->cache;
     }
 
+    private function getCachePrefixKey()
+    {
+        return md5($this->host . $this->port . $this->db . $this->getTableName());
+    }
+
+    private function deleteCachePrefix()
+    {
+        $this->getCache()->delete($this->getCachePrefixKey());
+    }
+
+    private function getCachePrefix()
+    {
+        $prefix = "";
+        if (!$this->getCache()->get($this->getCachePrefixKey())) {
+            $prefix = md5(microtime(true) . $this->getCachePrefixKey());
+            $this->getCache()->set($this->getCachePrefixKey(), $prefix, 0);
+        }
+
+        return $prefix;
+    }
+
     private function getCacheKey($primary)
     {
-        return md5($this->host . $this->port . $this->db . $this->getTableName() . "_" . $primary);
+        return md5($this->getCachePrefix() . "_" . $primary);
     }
 
     private function deleteCache(array $primaryArr)
@@ -133,7 +174,7 @@ class MysqliCacheDb extends \MysqliDb
         if ($this->columns == "*")
             return $result;
 
-        $columns = explode(",", $this->columns);
+        $columns = is_array($this->columns) ? $this->columns : explode(",", $this->columns);
         $columns = array_combine($columns, array_fill(0, count($columns), 1));
 
         $result && $result = array_intersect_key($result, $columns);
@@ -141,26 +182,52 @@ class MysqliCacheDb extends \MysqliDb
         return $result;
     }
 
+    public function fetchByPrimary($primary)
+    {
+        $this->where($this->getPrimaryKey(), $primary);
+        return $this->fetchOne();
+    }
+
     public function fetchByPrimaryCache($primary)
     {
+        if (!$this->enableCache)
+            return $this->fetchByPrimary($primary);
+
         $result = $this->getCache()->get($this->getCacheKey($primary));
         //todo stat cache hit rate
 
         if (empty($result)) {
             $result = $this->where($this->getPrimaryKey(), $primary)->getOne($this->getTableName());
-            $result && $this->getCache()->set($this->getCacheKey($primary), $result, 86400);
+            $result && $this->getCache()->set($this->getCacheKey($primary), json_encode($result), $this->expiredTime);
+        } else {
+            $result = json_decode($result, true);
         }
 
         return empty($result) ? [] : $this->filterColumn($result);
     }
 
+    public function fetchOne()
+    {
+        $result = $this->getOne($this->getTableName(), $this->columns);
+        return empty($result) ? [] : $result;
+    }
+
     public function fetchOneByCache()
     {
+        if (!$this->enableCache)
+            return $this->fetchOne();
+
         $result = [];
         $primary = $this->getValue($this->getTableName(), $this->getPrimaryKey());
         $primary && $result = $this->fetchByPrimaryCache($primary);
 
         return $result;
+    }
+
+    public function fetchByPrimaryArr(array $primaryArr)
+    {
+        $this->where($this->getPrimaryKey(), $primaryArr, "in");
+        return $this->fetchAll();
     }
 
     /**
@@ -170,6 +237,9 @@ class MysqliCacheDb extends \MysqliDb
      */
     public function fetchByPrimaryArrCache(array $primaryArr)
     {
+        if (!$this->enableCache)
+            return $this->fetchByPrimary($primaryArr);
+
         $result = [];
 
         foreach ($primaryArr as $primary) {
@@ -180,8 +250,17 @@ class MysqliCacheDb extends \MysqliDb
         return $result;
     }
 
+    public function fetchAll()
+    {
+        $result = $this->get($this->getTableName(), $this->paginate, $this->columns);
+        return empty($result) ? [] : $result;
+    }
+
     public function fetchAllByCache()
     {
+        if (!$this->enableCache)
+            return $this->fetchAll();
+
         $result = [];
         $primaryArr = $this->getValue($this->getTableName(), $this->getPrimaryKey(), $this->paginate);
         $primaryArr && $result = $this->fetchByPrimaryArrCache($primaryArr);
@@ -285,16 +364,36 @@ class MysqliCacheDb extends \MysqliDb
         return $this;
     }
 
+    public function insertData($insertData)
+    {
+        return parent::insert($this->getTableName(), $insertData);
+    }
+
+    public function insertMultiData(array $multiInsertData, array $dataKeys = null)
+    {
+        return parent::insertMulti($this->getTableName(), $multiInsertData, $dataKeys);
+    }
+
+    public function replaceData($insertData)
+    {
+        return parent::replace($this->getTableName(), $insertData);
+    }
+
     public function update($tableName, $tableData, $numRows = null)
     {
         return false;
     }
 
+    /**
+     * @param $primary
+     * @param $tableData
+     * @return bool
+     */
     public function updateByPrimaryCache($primary, $tableData)
     {
         $this->where($this->getPrimaryKey(), $primary);
         $result = parent::update($this->getTableName(), $tableData);
-        if ($result) {
+        if ($result && $this->enableCache) {
             if ($this->inTransaction)
                 $this->transactionDeleteCachePrimaryArr[] = $primary;
             else
@@ -307,12 +406,17 @@ class MysqliCacheDb extends \MysqliDb
     public function updateByCache($tableData)
     {
         $affectRows = 0;
-        $primaryArr = $this->getValue($this->getTableName(), $this->getPrimaryKey(), $this->paginate);
-        if ($primaryArr) {
-            foreach ($primaryArr as $primary) {
-                $ret = $this->updateByPrimaryCache($primary, $tableData);
-                $ret && $affectRows += (int)$this->count;
+        if ($this->enableCache) {
+            $primaryArr = $this->getValue($this->getTableName(), $this->getPrimaryKey(), $this->paginate);
+            if ($primaryArr) {
+                foreach ($primaryArr as $primary) {
+                    $ret = $this->updateByPrimaryCache($primary, $tableData);
+                    $ret && $affectRows += (int)$this->count;
+                }
             }
+        } else {
+            $result = parent::update($this->getTableName(), $tableData, $this->paginate);
+            $result && $affectRows = $this->count;
         }
 
         return $affectRows;
@@ -339,7 +443,7 @@ class MysqliCacheDb extends \MysqliDb
     {
         $this->where($this->getPrimaryKey(), $primary);
         $result = parent::delete($this->getTableName(), 1);
-        if ($result) {
+        if ($result && $this->enableCache) {
             if ($this->inTransaction)
                 $this->transactionDeleteCachePrimaryArr[] = $primary;
             else
@@ -352,12 +456,18 @@ class MysqliCacheDb extends \MysqliDb
     public function deleteByCache()
     {
         $affectRows = 0;
-        $primaryArr = $this->getValue($this->getTableName(), $this->getPrimaryKey(), $this->paginate);
-        if ($primaryArr) {
-            foreach ($primaryArr as $primary) {
-                $ret = $this->deleteByPrimaryCache($primary);
-                $ret && $affectRows++;
+
+        if ($this->enableCache) {
+            $primaryArr = $this->getValue($this->getTableName(), $this->getPrimaryKey(), $this->paginate);
+            if ($primaryArr) {
+                foreach ($primaryArr as $primary) {
+                    $ret = $this->deleteByPrimaryCache($primary);
+                    $ret && $affectRows++;
+                }
             }
+        } else {
+            $result = parent::delete($this->getTableName(), $this->paginate);
+            $result && $affectRows = is_array($this->paginate) ? $this->paginate[1] : $this->paginate;
         }
 
         return $affectRows;
@@ -378,7 +488,7 @@ class MysqliCacheDb extends \MysqliDb
     public function commit()
     {
         $result = parent::commit();
-        $this->deleteCache($this->transactionDeleteCachePrimaryArr);
+        $this->enableCache && $this->deleteCache($this->transactionDeleteCachePrimaryArr);
         return $result;
     }
 }
