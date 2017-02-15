@@ -11,6 +11,7 @@ use Jepsonwu\database\exception\MysqlException;
  * support transcation
  * support custom component,like "stat cache hit rate"
  * support register custom cache driver,like redis
+ * support register data filter
  *
  * Created by PhpStorm.
  * User: jepsonwu
@@ -48,6 +49,13 @@ class MysqliCacheDb extends \MysqliDb
     private $inTransaction = false;
     private $transactionDeleteCachePrimaryArr = [];
 
+
+    /**
+     * data filter
+     * @var
+     */
+    private $filterInsertFunc;
+    private $filterShowFunc;
 
     public function configTable($tableName, $primaryKey)
     {
@@ -94,6 +102,26 @@ class MysqliCacheDb extends \MysqliDb
     public function setCache(Cache $cache)
     {
         $this->cache = $cache;
+        return $this;
+    }
+
+    /**
+     * @param callable $func
+     * @return $this
+     */
+    public function registerFilterInsertFunc(callable $func)
+    {
+        $this->filterInsertFunc = $func;
+        return $this;
+    }
+
+    /**
+     * @param callable $func
+     * @return $this
+     */
+    public function registerFilterShowFunc(callable $func)
+    {
+        $this->filterShowFunc = $func;
         return $this;
     }
 
@@ -180,7 +208,7 @@ class MysqliCacheDb extends \MysqliDb
     private function filterColumn($result)
     {
         if ($this->columns == "*")
-            return $result;
+            return $this->filterShow($result);
 
         $columns = is_array($this->columns) ? $this->columns : explode(",", $this->columns);
         $columns = array_combine($columns, array_fill(0, count($columns), 1));
@@ -188,7 +216,7 @@ class MysqliCacheDb extends \MysqliDb
         $result && $result = array_intersect_key($result, $columns);
 
         $this->resetFilter();
-        return $result;
+        return $this->filterShow($result);
     }
 
     protected function resetFilter()
@@ -197,10 +225,16 @@ class MysqliCacheDb extends \MysqliDb
         $this->paginate = null;
     }
 
+    protected function filterShow($data)
+    {
+        is_callable($this->filterShowFunc) && $data = call_user_func_array($this->filterShowFunc, [$data]);
+        return $data;
+    }
+
     public function fetchByPrimary($primary)
     {
         $this->where($this->getPrimaryKey(), $primary);
-        return $this->fetchOne();
+        return $this->filterShow($this->fetchOne());
     }
 
     public function fetchByPrimaryCache($primary)
@@ -225,7 +259,7 @@ class MysqliCacheDb extends \MysqliDb
     {
         $result = $this->getOne($this->getTableName(), $this->columns);
         $this->resetFilter();
-        return empty($result) ? [] : $result;
+        return empty($result) ? [] : $this->filterShow($result);
     }
 
     public function fetchOneByCache()
@@ -243,7 +277,7 @@ class MysqliCacheDb extends \MysqliDb
     public function fetchByPrimaryArr(array $primaryArr)
     {
         $this->where($this->getPrimaryKey(), $primaryArr, "in");
-        return $this->fetchAll();
+        return $this->filterShow($this->fetchAll());
     }
 
     /**
@@ -270,7 +304,7 @@ class MysqliCacheDb extends \MysqliDb
     {
         $result = $this->get($this->getTableName(), $this->paginate, $this->columns);
         $this->resetFilter();
-        return empty($result) ? [] : $result;
+        return empty($result) ? [] : $this->filterShow($result);
     }
 
     public function fetchAllByCache()
@@ -382,19 +416,25 @@ class MysqliCacheDb extends \MysqliDb
         return $this;
     }
 
+    protected function filterInsert($data)
+    {
+        is_callable($this->filterInsertFunc) && $data = call_user_func_array($this->filterInsertFunc, [$data]);
+        return $data;
+    }
+
     public function insertData($insertData)
     {
-        return parent::insert($this->getTableName(), $insertData);
+        return parent::insert($this->getTableName(), $this->filterInsert($insertData));
     }
 
     public function insertMultiData(array $multiInsertData, array $dataKeys = null)
     {
-        return parent::insertMulti($this->getTableName(), $multiInsertData, $dataKeys);
+        return parent::insertMulti($this->getTableName(), $this->filterInsert($multiInsertData), $dataKeys);
     }
 
     public function replaceData($insertData)
     {
-        return parent::replace($this->getTableName(), $insertData);
+        return parent::replace($this->getTableName(), $this->filterInsert($insertData));
     }
 
     public function update($tableName, $tableData, $numRows = null)
@@ -410,7 +450,7 @@ class MysqliCacheDb extends \MysqliDb
     public function updateByPrimaryCache($primary, $tableData)
     {
         $this->where($this->getPrimaryKey(), $primary);
-        $result = parent::update($this->getTableName(), $tableData);
+        $result = parent::update($this->getTableName(), $this->filterInsert($tableData));
         if ($result && $this->enableCache) {
             if ($this->inTransaction)
                 $this->transactionDeleteCachePrimaryArr[] = $primary;
@@ -433,7 +473,7 @@ class MysqliCacheDb extends \MysqliDb
                 }
             }
         } else {
-            $result = parent::update($this->getTableName(), $tableData, $this->paginate);
+            $result = parent::update($this->getTableName(), $this->filterInsert($tableData), $this->paginate);
             $result && $affectRows = $this->count;
         }
 

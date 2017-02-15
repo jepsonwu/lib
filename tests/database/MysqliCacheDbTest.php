@@ -22,9 +22,39 @@ class MysqliCacheDbTest extends TestCase
         $db = new MysqliCacheDb("10.10.106.218", "root", "tortdh_gogo888!", "inchat_user", 3306);
         $db->configCache([
             "memcached", "11211"
-        ])->configTable("user", "id");
+        ])->configTable("user", "id")->registerFilterInsertFunc([$this, "filterInsert"]);
+        $db->registerFilterShowFunc([$this, "filterShow"]);
 
         return $db;
+    }
+
+    public function filterInsert($data)
+    {
+        $single = false;
+        if (!is_array(current($data))) {
+            $data = [$data];
+            $single = true;
+        }
+
+        foreach ($data as &$item) {
+            isset($item['school']) && $item['school'] .= "filter";
+        }
+
+        return $single ? current($data) : $data;
+    }
+
+    public function filterShow($data)
+    {
+        $single = false;
+        if (!is_array(current($data))) {
+            $data = [$data];
+            $single = true;
+        }
+        foreach ($data as &$item) {
+            isset($item['school']) && $item['school'] = substr($item['school'], 0, -6);
+        }
+
+        return $single ? current($data) : $data;
     }
 
     /**
