@@ -80,6 +80,12 @@ class MysqliCacheDb extends \MysqliDb
         return $this;
     }
 
+    public function enableCache()
+    {
+        $this->enableCache = true;
+        return $this;
+    }
+
     /**
      * you must be set another cache instance what implements cache interface if you don't use memcached cache
      * @param Cache $cache

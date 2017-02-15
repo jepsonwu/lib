@@ -63,9 +63,25 @@ class MysqliCacheDbTest extends TestCase
         $this->assertTrue(isset($result['id']) && $result['id'] == $primary, "fetch by primary cache failed");
     }
 
-    public function testDisableCache()
+    /**
+     * @depends testInsert
+     * @depends testDb
+     * @param $primary
+     * @param MysqliCacheDb $db
+     */
+    public function testDisableCache($primary, MysqliCacheDb $db)
     {
+        $db->disableCache();
+        $result = $db->fetchByPrimaryCache($primary);
+        $this->assertTrue(isset($result['id']) && $result['id'] == $primary, "disable cache failed");
 
+        $db->updateByPrimaryCache($primary, ["ip" => "127.0.0.1"]);
+        $result = $db->fetchByPrimaryCache($primary);
+        $this->assertTrue(isset($result['ip']) && $result['ip'] == "127.0.0.1", "disable cache fetch failed");
+
+        $db->enableCache();
+        $result = $db->fetchByPrimaryCache($primary);
+        $this->assertTrue(isset($result['ip']) && $result['ip'] == "127.0.0.1", "enable cache fetch failed");
     }
 
     /**

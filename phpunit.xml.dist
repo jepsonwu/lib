@@ -2,9 +2,9 @@
 
 <phpunit bootstrap="vendor/autoload.php" colors="true">
     <testsuites>
-        <!--<testsuite name="Lib Hook Test Suite">-->
-        <!--<directory>tests/hook/</directory>-->
-        <!--</testsuite>-->
+        <testsuite name="Lib Hook Test Suite">
+            <directory>tests/hook/</directory>
+        </testsuite>
         <testsuite name="Lib Database Test Suite">
             <directory>tests/database/</directory>
         </testsuite>
