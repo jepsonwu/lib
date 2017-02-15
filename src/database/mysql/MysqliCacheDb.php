@@ -155,7 +155,9 @@ class MysqliCacheDb extends \MysqliDb
 
     private function deleteCache(array $primaryArr)
     {
-        return $this->getCache()->deleteMulti($primaryArr);
+        return $this->getCache()->deleteMulti(array_map(function ($primary) {
+            return $this->getCacheKey($primary);
+        }, $primaryArr));
     }
 
     /**
@@ -179,7 +181,14 @@ class MysqliCacheDb extends \MysqliDb
 
         $result && $result = array_intersect_key($result, $columns);
 
+        $this->resetFilter();
         return $result;
+    }
+
+    protected function resetFilter()
+    {
+        $this->columns = "*";
+        $this->paginate = null;
     }
 
     public function fetchByPrimary($primary)
@@ -209,6 +218,7 @@ class MysqliCacheDb extends \MysqliDb
     public function fetchOne()
     {
         $result = $this->getOne($this->getTableName(), $this->columns);
+        $this->resetFilter();
         return empty($result) ? [] : $result;
     }
 
@@ -253,6 +263,7 @@ class MysqliCacheDb extends \MysqliDb
     public function fetchAll()
     {
         $result = $this->get($this->getTableName(), $this->paginate, $this->columns);
+        $this->resetFilter();
         return empty($result) ? [] : $result;
     }
 
@@ -262,9 +273,10 @@ class MysqliCacheDb extends \MysqliDb
             return $this->fetchAll();
 
         $result = [];
-        $primaryArr = $this->getValue($this->getTableName(), $this->getPrimaryKey(), $this->paginate);
+        $primaryArr = (array)$this->getValue($this->getTableName(), $this->getPrimaryKey(), $this->paginate);
         $primaryArr && $result = $this->fetchByPrimaryArrCache($primaryArr);
 
+        $this->resetFilter();
         return $result;
     }
 
@@ -407,7 +419,7 @@ class MysqliCacheDb extends \MysqliDb
     {
         $affectRows = 0;
         if ($this->enableCache) {
-            $primaryArr = $this->getValue($this->getTableName(), $this->getPrimaryKey(), $this->paginate);
+            $primaryArr = (array)$this->getValue($this->getTableName(), $this->getPrimaryKey(), $this->paginate);
             if ($primaryArr) {
                 foreach ($primaryArr as $primary) {
                     $ret = $this->updateByPrimaryCache($primary, $tableData);
@@ -419,6 +431,7 @@ class MysqliCacheDb extends \MysqliDb
             $result && $affectRows = $this->count;
         }
 
+        $this->resetFilter();
         return $affectRows;
     }
 
@@ -470,6 +483,7 @@ class MysqliCacheDb extends \MysqliDb
             $result && $affectRows = is_array($this->paginate) ? $this->paginate[1] : $this->paginate;
         }
 
+        $this->resetFilter();
         return $affectRows;
     }
 
@@ -485,10 +499,18 @@ class MysqliCacheDb extends \MysqliDb
         parent::startTransaction();
     }
 
+    public function rollback()
+    {
+        $result = parent::rollback();
+        $this->inTransaction = false;
+        return $result;
+    }
+
     public function commit()
     {
         $result = parent::commit();
         $this->enableCache && $this->deleteCache($this->transactionDeleteCachePrimaryArr);
+        $this->inTransaction = false;
         return $result;
     }
 }
